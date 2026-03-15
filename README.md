@@ -189,6 +189,8 @@ Similar to Sets, but every member is associated with a floating-point "score". E
 4) "100"
 ```
 
+To explore more, see the Redis documentation on [data types](https://redis.io/docs/latest/develop/data-types/).
+
 ---
 
 ## 4. Key Management & Expiration (TTL)
@@ -224,3 +226,203 @@ exit
 
 ---
 
+## 5. Connecting to an Application
+
+To tie concepts together into a single application we will implement a live application called **CompUni Live Q & A**. This app will allow students to submit questions during a lecture, upvote each other's questions, and see live updates on the most popular questions.
+
+Imagine 500 students in a lecture hall. They are joining the room, submitting questions, and rapidly upvoting each other's questions. We will use Redis to buffer, queue, and broadcast this data.
+
+![CompUni Page](./images/compuni%20page.png)
+
+### Step 1: Getting Started
+
+Clone the starter repository [SDS-Kit-Redis](https://github.com/sds-edu/SDS-Kit-Redis), install the dependencies, and start your local Redis and SQLite environment:
+
+```bash
+git clone https://github.com/sds-edu/SDS-Kit-Redis
+cd SDS-Kit-Redis
+npm install
+docker-compose up -d
+npm start
+```
+
+Open `server.js`. You will find several `TODO` comments. Let's build out our Redis application step-by-step.
+
+---
+
+### Part 1: Room Setup & Active Presence (Hashes & Sets)
+
+To launch a session, we need a way to store room details and track unique participants in real time. We’ll use Hashes to group room information into a single object and Sets to ensure our list of active users remains unique and easy to query.
+
+Locate the `TODO: [Room Creation]` section. We will use a **Hash** to store the room info.
+
+Implement the following code:
+
+```javascript
+    await redis.hSet(`room:${roomId}:meta`, {
+        topic,
+        speaker,
+        status: 'active'
+    });
+```
+
+Locate the `TODO: [Heartbeat & Sessions]`. We will use a **Set** to track active users in the room, and a simple `SET` with expiration to track individual user sessions.
+
+Implement the following code:
+
+```javascript
+    await redis.sAdd(`room:${roomId}:active_users`, userId);
+    await redis.set(`session:${userId}`, 'active', { EX: 15 });
+```
+
+---
+
+### Part 2: The Question Queue (Lists)
+
+Questions need to be handled in the exact order they arrive to keep the flow fair. Redis Lists are the ideal tool for this, allowing us to build a high-speed, First-In-First-Out (FIFO) queue that handles high concurrency with ease.
+
+Locate `TODO: [Ask Question]` section. We will use a **List** to implement this queue. Each question will be stored as a JSON string that comes from the request body.
+
+Implement the following code:
+
+```javascript
+    await redis.rPush(`room:${roomId}:question_queue`, JSON.stringify(question));
+```
+
+---
+
+### Part 3: Atomic Operations (Transactions)
+
+When a speaker clicks "Answer Next Question", we have to update the queue and the global statistics simultaneously.
+
+1. The question is popped from the front of the queue.
+2. The "Total Questions Answered" statistic is incremented.
+
+A server hiccup between step 1 and 2 could result in corrupted statistics, so we need to ensure these operations happen **atomically**.
+
+Locate the `TODO: [Answer Next Question]` section. We will use a Redis **Transaction** to ensure these two operations happen together. The `multi()` method allows us to queue up multiple commands and execute them atomically with `exec()`.
+
+Implement the following code:
+
+```javascript
+    const [poppedQuestion, totalAnswered] = await redis.multi()
+        .lPop(`room:${roomId}:question_queue`)
+        .incr('stats:total_answered')
+        .exec();
+```
+
+---
+
+To fix this section of the guide, we need to ensure the explanation accurately reflects the "Source of Truth" code you are now using (which uses `dirty_questions` and `upvotes`) rather than the old "Buffer" code (which used `upvotes_buffer`).
+
+Here is the corrected **Part 4** for your guide:
+
+---
+
+Here is a revised version of that section tailored for undergrads. I’ve fixed the mismatched bullet points (since your code upgraded from the `dummyId` buffer to the much smarter `dirty_questions` Set) and added the prompt to check the terminal.
+
+---
+
+### Part 4: The Upvote (Buffering & Eventual Consistency)
+
+High-frequency events like "upvote spam" can easily overwhelm a traditional disk-based database like SQLite, leading to "Database Locking" errors and a poor user experience.
+
+To solve this, we use an **Eventual Consistency** pattern. We will use Redis to instantly tally the votes in memory, and a background worker to sync those final totals to SQLite in batches.
+
+#### 1. The Upvote Route
+
+Locate the `TODO: [Upvote Question]` section. Each time an upvote comes in, we will increment the counter in Redis *instead* of hitting SQLite. We also need to keep track of *which* questions received votes so our worker knows what to update later.
+
+Implement the following code:
+
+```javascript
+    //  Instantly increment the total upvote count in memory
+    await redis.incr(`question:${questionId}:upvotes`);
+
+    // Add the question ID to a "dirty" set to flag it for the background worker
+    await redis.sAdd('dirty_questions', questionId);
+
+```
+
+#### 2. The Background Worker
+
+Locate the `TODO: [Eventual Consistency Worker]` section. Every 10,000 milliseconds (10 seconds), we will run a background job that checks the `dirty_questions` Set for any questions that received new upvotes, and safely writes them to SQLite.
+
+Implement the following code:
+
+```javascript
+    // Get only the IDs of questions that actually had new upvotes
+    const questionIds = await redis.sMembers('dirty_questions');
+
+    for (const questionId of questionIds) {
+        // Get the current TOTAL from Redis
+        const totalVotes = await redis.get(`question:${questionId}:upvotes`);
+
+        if (totalVotes) {
+            // Update SQLite to MATCH the Redis total
+            db.run("UPDATE questions SET upvotes = ? WHERE id = ?", [totalVotes, questionId], (err) => {
+                if (!err) {
+                    // If sync succeeded, remove from the "dirty" set
+                    redis.sRem('dirty_questions', questionId);
+                    console.log(`Synced total ${totalVotes} votes for ${questionId}`);
+                }
+            });
+        }
+    }
+
+```
+
+* **`redis.incr(...)`**: Redis Strings handle atomic increments perfectly. Even if 1,000 requests hit at the exact same millisecond, Redis accurately counts every single one without race conditions.
+* **`redis.sAdd(...)`**: Redis Sets only store *unique* values. Even if a question gets 500 upvotes, its ID is only added to this list once!
+* **`db.run("UPDATE...")`**: This is where we save our database. Instead of 500 individual disk writes, SQLite performs just **one** efficient update to save the batch of votes.
+* **`redis.sRem(...)`**: Once successfully saved to SQLite, we remove the ID from the "dirty" set so we don't unnecessarily ping SQLite on the next 10-second loop.
+
+### 👀 Watch Your Terminal
+
+Hit the **Upvote button** on a few questions as fast as you can.
+
+Notice how fast the frontend updates. Now, leave the browser and look at your **terminal console**. Every 10 seconds, you should see the background worker quietly batching your clicks and logging the sync:
+
+```bash
+> `Synced total 30 votes for q_1773586009440`
+> `Synced total 25 votes for q_1773586019690`
+```
+
+By doing this, you've successfully prevented "Database Locking" and built a highly scalable endpoint!
+
+### Cleanup
+
+Press `Ctrl+C` to stop the application. To clean up resources, run:
+
+```bash
+docker-compose down
+```
+
+---
+
+## References
+
+The following resources were used as references for the guide:
+
+* [Redis Official Documentation](https://redis.io/docs)
+
+* [Redis Quick Guides](https://redis.io/tutorials/howtos/quick-start/)
+* [Getting Started with Node.js and Redis](https://redis.io/tutorials/develop/node/gettingstarted/)
+
+## Further Reading
+
+A few good references if you want to explore Redis beyond this guide:
+
+* [Redis Quick Start (official docs)](https://redis.io/tutorials/howtos/quick-start/)
+
+* [Redis Tutorial with Cheat Sheet and Quick Start Guide](https://www.dragonflydb.io/guides/beginners-redis-tutorial)
+
+* [Redis Persistence (RDB & AOF) (official docs)](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
+
+* [Real-time Collaborative Editor with Redis](https://dev.to/depapp/codesync-real-time-collaborative-code-editor-powered-by-redis-15h5)
+
+* [Redis Persistence Demystified](https://oldblog.antirez.com/post/redis-persistence-demystified.html)
+
+## AI Declaration
+
+Some parts of this guide were structured, formatted, and refined with the assistance of `Gemini 3.1 Pro` . The model was used to draft technical explanations and generate code snippets. All code was reviewed and tested to ensure accuracy and functionality.
