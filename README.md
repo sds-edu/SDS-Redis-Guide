@@ -425,4 +425,4 @@ A few good references if you want to explore Redis beyond this guide:
 
 ## AI Declaration
 
-Some parts of this guide were structured, formatted, and refined with the assistance of `Gemini 3.1 Pro` . The model was used to draft technical explanations and generate code snippets. All code was reviewed and tested to ensure accuracy and functionality.
+Some parts of this guide were structured, formatted, and refined with the assistance of `Gemini 3.1 Pro` . The model was used to draft technical explanations and generate code snippets. All code snippets used in the guide and command sequences were reviewed, implemented, and tested by the teaching team to ensure accuracy and functionality.
