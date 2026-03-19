@@ -246,8 +246,6 @@ docker-compose up -d
 npm start
 ```
 
-Open `server.js`. You will find several `TODO` comments. Let's build out our Redis application step-by-step.
-
 ---
 
 ### Part 1: Room Setup & Active Presence (Hashes & Sets)
@@ -310,16 +308,6 @@ Implement the following code:
         .incr('stats:total_answered')
         .exec();
 ```
-
----
-
-To fix this section of the guide, we need to ensure the explanation accurately reflects the "Source of Truth" code you are now using (which uses `dirty_questions` and `upvotes`) rather than the old "Buffer" code (which used `upvotes_buffer`).
-
-Here is the corrected **Part 4** for your guide:
-
----
-
-Here is a revised version of that section tailored for undergrads. I’ve fixed the mismatched bullet points (since your code upgraded from the `dummyId` buffer to the much smarter `dirty_questions` Set) and added the prompt to check the terminal.
 
 ---
 
