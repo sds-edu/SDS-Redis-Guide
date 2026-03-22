@@ -8,7 +8,7 @@ In this guide, we will explore how we can introduce an in-memory datastore to bu
 
 ### What is Redis?
 
-**Redis** (REmote DIctionary Server) is an open-source, in-memory data structure store. Because it keeps all data in RAM rather than writing it immediately to a spinning disk or SSD, operations are incredibly fast—often reading and writing in under a millisecond.
+**Redis** (REmote DIctionary Server) is an open-source, in-memory data structure store. Because it keeps all data in RAM rather than writing it immediately to a spinning disk or SSD, operations are incredibly fast, often reading and writing in under a millisecond.
 
 While we are using it as a high-speed buffer today, Redis is a versatile tool in modern software engineering. Common use cases include:
 
@@ -39,7 +39,7 @@ docker run -d --name redis -p 6379:6379 redis:latest
 
 ```
 
-This starts a Redis server listening on port 6379 on your machine.
+This starts a Redis server listening on port `6379` on your machine.
 
 You can interact with it from the command line using the Redis CLI (inside the container):
 
@@ -62,8 +62,8 @@ GET mykey
 
 It is important to understand how Redis identifies data. Everything in Redis is stored as a **Key-Value pair**.
 
-* **The Key:** This is the unique identifier you use to store and retrieve your data. Redis keys are "binary safe" (meaning a key could technically be anything from a simple text string to the raw bytes of a JPEG file), but they are almost always standard text strings.
-* **The Value:** This is the actual data payload. Unlike simple caches that only store basic strings, Redis values can be complex data structures (which we will explore in the next section).
+* **The Key:** This is the unique identifier you use to store and retrieve your data. Redis keys are **binary safe**, meaning a key could technically be anything from a simple text string to the raw bytes of a JPEG file (but they are mostly text strings).
+* **The Value:** This is the actual data payload. Unlike simple caches that only store basic strings, Redis values can be complex data structures.
 
 ### Key Naming Best Practices
 
@@ -365,18 +365,18 @@ Implement the following code:
 * **`db.run("UPDATE...")`**: This is where we save our database. Instead of 500 individual disk writes, SQLite performs just **one** efficient update to save the batch of votes.
 * **`redis.sRem(...)`**: Once successfully saved to SQLite, we remove the ID from the "dirty" set so we don't unnecessarily ping SQLite on the next 10-second loop.
 
-### 👀 Watch Your Terminal
+### Watch Your Terminal
 
 Hit the **Upvote button** on a few questions as fast as you can.
 
-Notice how fast the frontend updates. Now, leave the browser and look at your **terminal console**. Every 10 seconds, you should see the background worker quietly batching your clicks and logging the sync:
+Notice how fast the frontend updates. Now, leave the browser and look at your terminal console. Every 10 seconds, you should see the background worker quietly batching your clicks and logging the sync:
 
 ```bash
 > `Synced total 30 votes for q_1773586009440`
 > `Synced total 25 votes for q_1773586019690`
 ```
 
-By doing this, you've successfully prevented "Database Locking" and built a highly scalable endpoint!
+By doing this, you've successfully prevented **Database Locking** and built a highly scalable endpoint!
 
 ### Cleanup
 
